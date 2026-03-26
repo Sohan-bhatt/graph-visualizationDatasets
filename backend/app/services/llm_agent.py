@@ -1,10 +1,6 @@
 import os
 import json
 import logging
-<<<<<<< HEAD
-import google.generativeai as genai
-=======
->>>>>>> 2c6ca51 (inital commit)
 from typing import AsyncGenerator, Optional
 from openai import AsyncOpenAI
 from app.models.chat_models import (
@@ -52,15 +48,6 @@ def init_llm():
         logger.info("OpenAI client initialized (gpt-4o-mini)")
         return MODEL
     
-<<<<<<< HEAD
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
-    if gemini_key:
-        genai.configure(api_key=gemini_key)
-        MODEL = genai.GenerativeModel("gemini-2.0-flash")
-        LLM_PROVIDER = "gemini"
-        logger.info("Gemini 2.0 Flash initialized")
-        return MODEL
-=======
         gemini_key = os.getenv("GEMINI_API_KEY", "")
         if gemini_key:
             import google.generativeai as genai
@@ -69,7 +56,6 @@ def init_llm():
             LLM_PROVIDER = "gemini"
             logger.info("Gemini 2.0 Flash initialized")
             return MODEL
->>>>>>> 2c6ca51 (inital commit)
     
     logger.warning("No LLM API key set — LLM features disabled")
     return None
