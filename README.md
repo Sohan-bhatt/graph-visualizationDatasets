@@ -6,7 +6,7 @@ A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   React Frontend                         │
+│                   React Frontend (Vercel)                │
 │  ┌─────────────────┐  ┌───────────────────────────────┐  │
 │  │  force-graph-2d  │  │  Chat Interface (SSE)         │  │
 │  │  Visualization   │  │  - Natural language input      │  │
@@ -17,7 +17,7 @@ A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C
 └───────────────────────┬─────────────────────────────────┘
                         │ REST API + SSE
 ┌───────────────────────┴─────────────────────────────────┐
-│                  FastAPI Backend (Python)                 │
+│                  FastAPI Backend (Render)                 │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐  │
 │  │ Graph API    │ │ Query Engine │ │ Guardrails       │  │
 │  │ - GET nodes  │ │ - NL → SQL   │ │ - Domain check   │  │
@@ -60,7 +60,7 @@ A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C
 
 ### Node Types (8)
 | Node | ID Pattern | Properties |
-|---|---|---|
+|------|------------|------------|
 | `SalesOrder` | `SO_740506` | totalNetAmount, deliveryStatus, creationDate, paymentTerms |
 | `DeliveryDoc` | `DEL_80737721` | shippingPoint, goodsMovementStatus, pickingStatus |
 | `BillingDoc` | `BILL_90504248` | type (F2/S1), amount, isCancelled, accountingDocument |
@@ -72,7 +72,7 @@ A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C
 
 ### Edge Types (10)
 | Edge | From → To | Meaning |
-|---|---|---|
+|------|-----------|---------|
 | `PLACED` | Customer → SalesOrder | Customer placed the order |
 | `CONTAINS_ITEM` | SalesOrder → Product | Order contains product |
 | `SHIPS_FROM` | SalesOrder/DeliveryDoc → Plant | Ships from plant |
@@ -109,12 +109,6 @@ A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C
 - Extracts entity IDs from results for graph highlighting
 - Formats answer in natural language (with Gemini) or structured format (offline)
 
-### Example Prompt → Response
-
-**Query**: "Which products have the most billing documents?"
-**Generated SQL**: JOIN products → sales_order_items → outbound_delivery_items → billing_document_items, GROUP BY product, ORDER BY billing_count DESC
-**Result**: FACESERUM 30ML VIT C and SUNSCREEN GEL SPF50-PA+++ 50ML (22 billing docs each)
-
 ## Guardrails Implementation
 
 ### 4 Layers of Protection
@@ -138,12 +132,6 @@ A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C
    - Never generates data not in query results
    - Returns "No data found" for empty results
 
-### Example Guardrail Response
-```
-User: "What is the weather today?"
-Response: "This system is designed to answer questions related to the provided SAP Order-to-Cash dataset only."
-```
-
 ## Setup Instructions
 
 ### Prerequisites
@@ -163,7 +151,7 @@ cp -r /path/to/sap-o2c-data data/
 
 # Create .env
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
+# Edit .env and add your GEMINI_API_KEY (and OPENAI_API_KEY if desired)
 
 # Ingest data and build graph
 python -m app.services.graph_builder
@@ -181,78 +169,40 @@ cp .env.example .env
 npm run dev
 ```
 
-### Docker Setup
-```bash
-# Set your Gemini API key
-export GEMINI_API_KEY=your_key_here
-
-# Build and run
-docker-compose up --build
-```
-
-### Access
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-
 ## Deployment
 
 This repo is set up for:
 - Frontend on Vercel
 - Backend on Render
 
-### Vercel
-
+### Vercel (Frontend)
 1. Import the repo in Vercel.
 2. Set the project root to the repository root.
-3. Vercel will use [vercel.json](/home/sohanx1/dodge-ai-graph/vercel.json) and build the frontend from `frontend/`.
+3. Vercel will use [`vercel.json`](vercel.json) and build the frontend from `frontend/`.
 4. Add this environment variable in Vercel:
+   ```bash
+   VITE_API_BASE_URL=https://your-render-backend.onrender.com/api
+   ```
 
-```bash
-VITE_API_BASE_URL=https://your-render-backend.onrender.com/api
-```
+### Render (Backend)
+1. Create a new Web Service from this repo on Render.
+2. Use the following build and start commands:
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+3. Attach a persistent disk (minimum 1GB) mounted at `/var/data` so that the SQLite database survives restarts.
+4. Add secrets (environment variables):
+   ```bash
+   GEMINI_API_KEY=your_gemini_key
+   OPENAI_API_KEY=your_openai_key  # Optional, used as fallback
+   FRONTEND_URL=https://your-vercel-app.vercel.app  # For CORS
+   ```
+5. Ensure the persistent disk is mounted at `/var/data` and the application will use:
+   - Database: `/var/data/o2c.db` (relative path `data/o2c.db` resolves here)
+   - Data directory: `/var/data/sap-o2c-data` (if you need to ingest data post-deploy)
 
-### Render
-
-1. Create a new Blueprint or Web Service from this repo.
-2. Use [render.yaml](/home/sohanx1/dodge-ai-graph/render.yaml).
-3. Attach a persistent disk at `/var/data` so uploads and SQLite survive restarts.
-4. Add secrets:
-
-```bash
-GEMINI_API_KEY=...
-OPENAI_API_KEY=...
-CORS_ORIGINS=https://your-vercel-app.vercel.app
-```
-
-5. Upload the default dataset into `/var/data/sap-o2c-data` or ingest it through the UI after deploy.
-
-### Backend Storage Paths
-
-The backend is now environment-driven:
-
-```bash
-DATABASE_PATH=/var/data/o2c.db
-DATA_DIR=/var/data/sap-o2c-data
-UPLOAD_DIR=/var/data/uploads
-BROWSE_BASE_DIR=/var/data
-```
-
-These values are already included in [render.yaml](/home/sohanx1/dodge-ai-graph/render.yaml).
-
-## Submission Readiness
-
-Current state:
-- Pull-based graph exploration is implemented
-- Chat answers are data-backed through SQL execution
-- Guardrails reject unrelated/off-topic prompts
-- Frontend build passes
-- Repo is deployable to Vercel + Render
-
-Remaining before submission:
-- Deploy both services and verify the public URLs
-- Preload a valid dataset on Render so reviewers can test immediately
-- Export and bundle your AI session logs
+Note: The data ingestion step (`python -m app.services.graph_builder`) should be run either:
+   a) Before deploying (by copying the data directory into the persistent disk), or
+   b) After deploying via Render's shell access (if you prefer to ingest on first run).
 
 ## Example Queries
 
@@ -290,7 +240,7 @@ dodge-ai-graph/
 │   │   │   ├── guardrails.py    # Domain classifier
 │   │   │   └── sql_executor.py  # Safe SQL execution
 │   │   └── db/                  # Schema context JSON
-│   ├── data/                    # SQLite DB + JSONL data
+│   ├── data/                    # SQLite DB + JSONL data (on persistent disk in Render)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
