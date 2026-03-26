@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: dodge-ai-graph-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_PATH
+        value: /var/data/o2c.db
+      - key: DATA_DIR
+        value: /var/data/sap-o2c-data
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: BROWSE_BASE_DIR
+        value: /var/data
+      - key: CORS_ORIGINS
+        sync: false
+    disk:
+      name: dodge-ai-graph-data
+      mountPath: /var/data
+      sizeGB: 1

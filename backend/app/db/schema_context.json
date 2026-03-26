@@ -1,0 +1,189 @@
+{
+  "tables": {
+    "sales_order_headers": {
+      "description": "SAP Sales Orders - top-level order records with 100 records",
+      "primary_key": "salesOrder",
+      "columns": {
+        "salesOrder": "TEXT PK - Order number e.g. 740506",
+        "soldToParty": "TEXT FK -> business_partners.businessPartner",
+        "totalNetAmount": "REAL - Order total in INR",
+        "overallDeliveryStatus": "TEXT - C=Completed",
+        "overallOrdReltdBillgStatus": "TEXT - Billing status",
+        "creationDate": "TEXT ISO8601",
+        "requestedDeliveryDate": "TEXT ISO8601",
+        "transactionCurrency": "TEXT - always INR",
+        "customerPaymentTerms": "TEXT e.g. Z009"
+      },
+      "relationships": [
+        "-> sales_order_items via salesOrder",
+        "-> outbound_delivery_items via salesOrder = referenceSdDocument",
+        "-> business_partners via soldToParty = businessPartner"
+      ]
+    },
+    "sales_order_items": {
+      "description": "Line items within sales orders - 167 records",
+      "primary_key": "(salesOrder, salesOrderItem)",
+      "columns": {
+        "salesOrder": "TEXT FK -> sales_order_headers.salesOrder",
+        "salesOrderItem": "TEXT - Item number e.g. 10, 20",
+        "material": "TEXT FK -> products.product",
+        "requestedQuantity": "REAL",
+        "netAmount": "REAL",
+        "productionPlant": "TEXT FK -> plants.plant",
+        "storageLocation": "TEXT"
+      },
+      "relationships": [
+        "-> sales_order_headers via salesOrder",
+        "-> products via material = product",
+        "-> plants via productionPlant = plant"
+      ]
+    },
+    "outbound_delivery_headers": {
+      "description": "Outbound delivery documents - 86 records",
+      "primary_key": "deliveryDocument",
+      "columns": {
+        "deliveryDocument": "TEXT PK e.g. 80737721",
+        "shippingPoint": "TEXT",
+        "overallGoodsMovementStatus": "TEXT - A=Not processed, C=Completed",
+        "overallPickingStatus": "TEXT - C=Completed",
+        "creationDate": "TEXT ISO8601"
+      }
+    },
+    "outbound_delivery_items": {
+      "description": "Line items in outbound deliveries - 137 records",
+      "primary_key": "(deliveryDocument, deliveryDocumentItem)",
+      "columns": {
+        "deliveryDocument": "TEXT FK -> outbound_delivery_headers.deliveryDocument",
+        "deliveryDocumentItem": "TEXT - Item number",
+        "referenceSdDocument": "TEXT FK -> sales_order_headers.salesOrder",
+        "referenceSdDocumentItem": "TEXT",
+        "plant": "TEXT FK -> plants.plant",
+        "storageLocation": "TEXT",
+        "actualDeliveryQuantity": "REAL"
+      },
+      "relationships": [
+        "-> outbound_delivery_headers via deliveryDocument",
+        "-> sales_order_headers via referenceSdDocument = salesOrder",
+        "-> plants via plant"
+      ]
+    },
+    "billing_document_headers": {
+      "description": "Billing documents (invoices and cancellations) - 163 records",
+      "primary_key": "billingDocument",
+      "columns": {
+        "billingDocument": "TEXT PK e.g. 90504248",
+        "billingDocumentType": "TEXT - F2=Invoice, S1=Cancellation",
+        "billingDocumentDate": "TEXT ISO8601",
+        "billingDocumentIsCancelled": "INTEGER - 1 if cancelled",
+        "cancelledBillingDocument": "TEXT - For S1 docs, the F2 doc it cancels",
+        "totalNetAmount": "REAL",
+        "accountingDocument": "TEXT FK -> journal_entry_items.accountingDocument",
+        "soldToParty": "TEXT FK -> business_partners.businessPartner"
+      },
+      "relationships": [
+        "-> billing_document_items via billingDocument",
+        "-> journal_entry_items via accountingDocument",
+        "-> business_partners via soldToParty = businessPartner"
+      ]
+    },
+    "billing_document_items": {
+      "description": "Line items in billing documents - 245 records",
+      "primary_key": "(billingDocument, billingDocumentItem)",
+      "columns": {
+        "billingDocument": "TEXT FK -> billing_document_headers.billingDocument",
+        "billingDocumentItem": "TEXT - Item number",
+        "material": "TEXT FK -> products.product",
+        "billingQuantity": "REAL",
+        "netAmount": "REAL",
+        "referenceSdDocument": "TEXT FK -> outbound_delivery_headers.deliveryDocument",
+        "referenceSdDocumentItem": "TEXT"
+      },
+      "relationships": [
+        "-> billing_document_headers via billingDocument",
+        "-> outbound_delivery_headers via referenceSdDocument = deliveryDocument",
+        "-> products via material = product"
+      ]
+    },
+    "journal_entry_items": {
+      "description": "Accounting journal entry line items - 123 records",
+      "primary_key": "(accountingDocument, accountingDocumentItem)",
+      "columns": {
+        "accountingDocument": "TEXT - Accounting doc number",
+        "referenceDocument": "TEXT FK -> billing_document_headers.billingDocument",
+        "amountInTransactionCurrency": "REAL - Positive=invoice, negative=reversal",
+        "customer": "TEXT FK -> business_partners.businessPartner",
+        "postingDate": "TEXT ISO8601",
+        "clearingDate": "TEXT ISO8601 or NULL if unpaid",
+        "clearingAccountingDocument": "TEXT - Payment doc that cleared this",
+        "glAccount": "TEXT - always 15500020 (AR subledger)"
+      },
+      "relationships": [
+        "-> billing_document_headers via referenceDocument = billingDocument",
+        "-> payments via clearingAccountingDocument"
+      ]
+    },
+    "payments": {
+      "description": "Accounts receivable payment clearing records - 120 records",
+      "primary_key": "(accountingDocument, accountingDocumentItem)",
+      "columns": {
+        "accountingDocument": "TEXT - The invoice's accounting doc",
+        "clearingAccountingDocument": "TEXT - The payment doc",
+        "clearingDate": "TEXT ISO8601",
+        "amountInTransactionCurrency": "REAL",
+        "customer": "TEXT FK -> business_partners.businessPartner",
+        "glAccount": "TEXT - AR subledger account"
+      },
+      "relationships": [
+        "-> journal_entry_items via clearingAccountingDocument",
+        "-> business_partners via customer = businessPartner"
+      ]
+    },
+    "business_partners": {
+      "description": "Customer master data - 8 records",
+      "primary_key": "businessPartner",
+      "columns": {
+        "businessPartner": "TEXT PK e.g. 310000108, 320000083",
+        "businessPartnerFullName": "TEXT - Company name",
+        "businessPartnerCategory": "TEXT - 2=Organization",
+        "businessPartnerGrouping": "TEXT e.g. Y101, Y102"
+      }
+    },
+    "products": {
+      "description": "Product/material master data - 69 records",
+      "primary_key": "product",
+      "columns": {
+        "product": "TEXT PK e.g. S8907367001003, 3001456",
+        "productType": "TEXT e.g. ZPKG, ZF01, ZFS1",
+        "productGroup": "TEXT e.g. ZPKG004, ZFG1001",
+        "grossWeight": "REAL",
+        "baseUnit": "TEXT - always PC"
+      }
+    },
+    "product_descriptions": {
+      "description": "Product descriptions by language - 69 records",
+      "primary_key": "(product, language)",
+      "columns": {
+        "product": "TEXT FK -> products.product",
+        "language": "TEXT - always EN",
+        "productDescription": "TEXT - Human-readable name"
+      }
+    },
+    "plants": {
+      "description": "Plant/warehouse master data - 44 records",
+      "primary_key": "plant",
+      "columns": {
+        "plant": "TEXT PK e.g. 1920, WB05",
+        "plantName": "TEXT",
+        "salesOrganization": "TEXT - always ABCD"
+      }
+    }
+  },
+  "join_paths": {
+    "order_to_delivery": "sales_order_headers.salesOrder = outbound_delivery_items.referenceSdDocument JOIN outbound_delivery_headers ON outbound_delivery_items.deliveryDocument = outbound_delivery_headers.deliveryDocument",
+    "delivery_to_billing": "outbound_delivery_headers.deliveryDocument = billing_document_items.referenceSdDocument JOIN billing_document_headers ON billing_document_items.billingDocument = billing_document_headers.billingDocument",
+    "billing_to_journal": "billing_document_headers.accountingDocument = journal_entry_items.accountingDocument AND journal_entry_items.referenceDocument = billing_document_headers.billingDocument",
+    "journal_to_payment": "journal_entry_items.clearingAccountingDocument = payments.clearingAccountingDocument",
+    "full_o2c_chain": "sales_order_headers -> outbound_delivery_items -> outbound_delivery_headers -> billing_document_items -> billing_document_headers -> journal_entry_items -> payments",
+    "order_to_product": "sales_order_items.material = products.product JOIN product_descriptions ON products.product = product_descriptions.product AND product_descriptions.language = 'EN'"
+  }
+}

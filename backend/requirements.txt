@@ -1,0 +1,21 @@
+fastapi==0.110.0
+uvicorn[standard]==0.27.0
+<<<<<<< HEAD
+pydantic==2.6.0
+pydantic-settings==2.1.0
+aiosqlite==0.19.0
+networkx==3.2.1
+google-generativeai==0.4.0
+openai==1.12.0
+python-dotenv==1.0.0
+python-multipart==0.0.9
+=======
+pydantic==2.4.0
+pydantic-settings==2.1.0
+aiosqlite==0.19.0
+networkx==3.2.1
+google-generativeai>=0.8.0
+openai==1.30.0
+python-dotenv==1.0.0
+python-multipart==0.0.9
+>>>>>>> 2c6ca51 (inital commit)
