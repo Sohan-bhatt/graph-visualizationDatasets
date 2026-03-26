@@ -33,28 +33,29 @@ async def lifespan(app: FastAPI):
 
     # Check if data directory exists
     if not os.path.isdir(data_dir):
-        logger.error(f"Data directory not found: {data_dir}")
-        logger.info("Please copy sap-o2c-data/ into the configured data directory")
+        logger.warning(f"Data directory not found: {data_dir}. Skipping initial data ingestion.")
+        logger.info("You can trigger data ingestion later via the /ingest endpoint.")
     else:
         # Ingest data
         logger.info("Ingesting JSONL data into SQLite...")
         await ingest_all(db_path, data_dir)
 
-        # Build NetworkX graph
-        logger.info("Building NetworkX graph...")
-        graph_obj = build_graph(db_path)
+    # Build NetworkX graph (from existing database, which may be empty if no data was ingested)
+    logger.info("Building NetworkX graph...")
+    graph_obj = build_graph(db_path)
 
-        # Generate schema context for LLM
-        logger.info("Generating schema context...")
-        generate_schema_context(db_path)
+    # Generate schema context for LLM (from existing database)
+    logger.info("Generating schema context...")
+    generate_schema_context(db_path)
 
-        # Store in app state
-        app.state.graph = graph_obj
-        app.state.db_path = db_path
+    # Store in app state
+    app.state.graph = graph_obj
+    app.state.db_path = db_path
 
-        logger.info(
-            f"System ready. Graph: {graph_obj.number_of_nodes()} nodes, {graph_obj.number_of_edges()} edges"
-        )
+    logger.info(
+        f"System ready. Graph: {graph_obj.number_of_nodes()} nodes, {graph_obj.number_of_edges()} edges"
+        + (" (no data ingested)" if not os.path.isdir(data_dir) else "")
+    )
 
     # Load schema for LLM agent
     load_schema_context()

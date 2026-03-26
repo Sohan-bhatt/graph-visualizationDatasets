@@ -42,22 +42,31 @@ def init_llm():
     global MODEL, LLM_PROVIDER
     
     openai_key = os.getenv("OPENAI_API_KEY", "")
-    if openai_key and not openai_key.startswith("AIza"):
-        MODEL = AsyncOpenAI(api_key=openai_key)
-        LLM_PROVIDER = "openai"
-        logger.info("OpenAI client initialized (gpt-4o-mini)")
-        return MODEL
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
     
-        gemini_key = os.getenv("GEMINI_API_KEY", "")
-        if gemini_key:
+    # Try OpenAI first if key is set and doesn't look like Gemini
+    if openai_key and openai_key.strip() and not openai_key.startswith("AIza"):
+        try:
+            MODEL = AsyncOpenAI(api_key=openai_key)
+            LLM_PROVIDER = "openai"
+            logger.info("OpenAI client initialized (gpt-4o-mini)")
+            return MODEL
+        except Exception as e:
+            logger.warning(f"Failed to initialize OpenAI client: {e}. Falling back to Gemini if available.")
+    
+    # Then try Gemini
+    if gemini_key and gemini_key.strip():
+        try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             MODEL = genai.GenerativeModel("gemini-2.0-flash")
             LLM_PROVIDER = "gemini"
             logger.info("Gemini 2.0 Flash initialized")
             return MODEL
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini client: {e}")
     
-    logger.warning("No LLM API key set — LLM features disabled")
+    logger.warning("No LLM API key set or initialization failed — LLM features disabled")
     return None
 
 
