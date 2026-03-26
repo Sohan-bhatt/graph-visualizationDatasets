@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import aiosqlite
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -10,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import graph, chat, ingest
-from app.services.graph_builder import ingest_all, build_graph, generate_schema_context
+from app.services.graph_builder import ingest_all, build_graph, create_tables, generate_schema_context
 from app.services.llm_agent import load_schema_context, init_llm
 
 logging.basicConfig(
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI):
     if not os.path.isdir(data_dir):
         logger.warning(f"Data directory not found: {data_dir}. Skipping initial data ingestion.")
         logger.info("You can trigger data ingestion later via the /ingest endpoint.")
+        async with aiosqlite.connect(db_path) as db:
+            await create_tables(db)
+            await db.commit()
     else:
         # Ingest data
         logger.info("Ingesting JSONL data into SQLite...")
