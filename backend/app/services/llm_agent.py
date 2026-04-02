@@ -1,8 +1,17 @@
 import os
+import re
 import json
 import logging
 from typing import AsyncGenerator, Optional
 from openai import AsyncOpenAI
+
+try:
+    import google.generativeai as genai
+    _GENAI_AVAILABLE = True
+except ImportError:
+    genai = None  # type: ignore
+    _GENAI_AVAILABLE = False
+
 from app.models.chat_models import (
     UserQuery,
     DomainClassification,
@@ -55,9 +64,8 @@ def init_llm():
             logger.warning(f"Failed to initialize OpenAI client: {e}. Falling back to Gemini if available.")
     
     # Then try Gemini
-    if gemini_key and gemini_key.strip():
+    if gemini_key and gemini_key.strip() and _GENAI_AVAILABLE:
         try:
-            import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             MODEL = genai.GenerativeModel("gemini-2.0-flash")
             LLM_PROVIDER = "gemini"
@@ -204,7 +212,6 @@ async def call_llm_json(system_prompt: str, user_msg: str, temperature: float = 
             text = text.strip()
         
         # Extract JSON from response (may have surrounding text)
-        import re
         json_match = re.search(r'\{[\s\S]*\}', text)
         if json_match:
             text = json_match.group(0)
@@ -397,8 +404,8 @@ async def run_agent(db_path: str, query: UserQuery) -> AgentResponse:
     # ── Guardrail: no API key ──
     if not model:
         return AgentResponse(
-            answer="GEMINI_API_KEY is not configured. Please add your API key to backend/.env to enable the LLM query system.",
-            thought_process="No Gemini API key found",
+            answer="No LLM API key is configured. Please add OPENAI_API_KEY to your environment variables to enable natural language queries.",
+            thought_process="No LLM API key found",
             query_type="error",
             confidence=0.0,
         )
@@ -446,8 +453,9 @@ async def run_agent(db_path: str, query: UserQuery) -> AgentResponse:
             if attempt < MAX_RETRIES:
                 continue
             else:
+                logger.error(f"SQL execution failed after all retries: {exec_result['error']}")
                 return AgentResponse(
-                    answer=f"I generated a query but it failed to execute. Error: {exec_result['error']}",
+                    answer="The query could not be executed against the dataset. Please try rephrasing your question.",
                     thought_process=f"SQL execution failed after {MAX_RETRIES + 1} attempts",
                     sql_used=generated_sql.sql,
                     sources=generated_sql.tables_used,
@@ -512,7 +520,7 @@ async def run_agent_stream(db_path: str, query: UserQuery) -> AsyncGenerator[dic
 
     if not model:
         yield {"event": "answer", "data": {
-            "answer": "GEMINI_API_KEY is not configured. Please add your API key to backend/.env.",
+            "answer": "No LLM API key is configured. Please add OPENAI_API_KEY to your environment variables to enable natural language queries.",
             "is_guardrailed": True,
             "query_type": "error",
             "confidence": 0.0,

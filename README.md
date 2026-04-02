@@ -1,265 +1,405 @@
-# Dodge AI - SAP O2C Context Graph System
+# Dodge AI — SAP O2C Context Graph System
 
-A graph-based data modeling and query system that unifies SAP Order-to-Cash (O2C) fragmented data into an interactive graph, with an LLM-powered natural language query interface.
+A production-grade graph intelligence platform that transforms fragmented SAP Order-to-Cash data into an interactive, queryable knowledge graph. Natural language questions are answered by a three-stage LLM pipeline (classify → generate SQL → verify) backed by a hybrid SQLite + NetworkX data layer.
+
+---
+
+## Live Demo
+
+| Service | URL |
+|---|---|
+| Frontend | Deployed on Vercel |
+| Backend API | Deployed on Render |
+| API Docs | `<render-url>/docs` |
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   React Frontend (Vercel)                │
-│  ┌─────────────────┐  ┌───────────────────────────────┐  │
-│  │  force-graph-2d  │  │  Chat Interface (SSE)         │  │
-│  │  Visualization   │  │  - Natural language input      │  │
-│  │  - Node expand   │  │  - Data-backed answers         │  │
-│  │  - Metadata      │  │  - Highlighted graph nodes     │  │
-│  │  - Search/filter │  │  - Thought process display     │  │
-│  └─────────────────┘  └───────────────────────────────┘  │
-└───────────────────────┬─────────────────────────────────┘
-                        │ REST API + SSE
-┌───────────────────────┴─────────────────────────────────┐
-│                  FastAPI Backend (Render)                 │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐  │
-│  │ Graph API    │ │ Query Engine │ │ Guardrails       │  │
-│  │ - GET nodes  │ │ - NL → SQL   │ │ - Domain check   │  │
-│  │ - GET edges  │ │ - Execute    │ │ - Input validate │  │
-│  │ - Expand     │ │ - Format     │ │ - SQL safety     │  │
-│  └──────┬───────┘ └──────┬───────┘ └──────────────────┘  │
-│         │                │                                │
-│         │         ┌──────┴───────┐                        │
-│         │         │ Gemini Flash │                        │
-│         │         │ (Free Tier)  │                        │
-│         │         └──────────────┘                        │
-└─────────┼────────────────────────────────────────────────┘
-          │
-┌─────────┴──────────────────────────────────────────────┐
-│         SQLite (relational) + NetworkX (in-memory graph) │
-│                                                          │
-│  Tables: sales_order_headers, sales_order_items,         │
-│  outbound_delivery_headers/items, billing_document       │
-│  headers/items, journal_entry_items, payments,           │
-│  business_partners, products, plants                     │
-│                                                          │
-│  NetworkX DiGraph: 669 nodes, 1188 edges                │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    React Frontend  (Vercel)                    │
+│                                                                │
+│   force-graph-2d canvas       Chat Panel (SSE streaming)      │
+│   - Node expand / inspect      - Natural language input        │
+│   - Degree-weighted sizing     - Thought process display       │
+│   - Type-coloured nodes        - SQL transparency              │
+│   - Anomaly overlay            - Entity highlighting           │
+└────────────────────────────┬─────────────────────────────────┘
+                             │  REST + Server-Sent Events
+┌────────────────────────────┴─────────────────────────────────┐
+│                   FastAPI Backend  (Render)                    │
+│                                                                │
+│   /api/graph          /api/chat            /api/ingest         │
+│   - initial nodes     - SSE stream         - JSONL upload      │
+│   - expand / focal    - non-stream         - folder ingest     │
+│   - search            - session routing    - reset / preview   │
+│   - anomalies                                                  │
+│   - stats                                                      │
+│                                                                │
+│   ┌──────────────────────────────────────────────────────┐    │
+│   │               3-Stage LLM Pipeline                   │    │
+│   │                                                       │    │
+│   │  Stage 1: Domain Classifier                          │    │
+│   │    Offline keyword scorer → OpenAI GPT-4o-mini       │    │
+│   │    Blocks off-topic, extracts entity IDs             │    │
+│   │                                                       │    │
+│   │  Stage 2: SQL Generator (self-correcting, 2 retries) │    │
+│   │    Schema-injected prompt → SELECT query             │    │
+│   │    Retry loop with error feedback                    │    │
+│   │                                                       │    │
+│   │  Stage 3: Result Verifier                            │    │
+│   │    NL answer grounded in actual rows                 │    │
+│   │    Entity ID extraction for graph highlighting       │    │
+│   └──────────────────────────────────────────────────────┘    │
+│                                                                │
+│   ┌─────────────────────┐   ┌──────────────────────────────┐  │
+│   │  SQLite  (17 tables) │   │  NetworkX DiGraph (in-memory)│  │
+│   │  1,634 O2C records   │   │  669 nodes  ·  1,188 edges   │  │
+│   │  Full join-path SQL  │   │  Degree centrality + BFS     │  │
+│   └─────────────────────┘   └──────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## Why SQLite + NetworkX (Not Neo4j)
+---
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Frontend framework | React 18 + TypeScript | UI |
+| Build tool | Vite 5 | Fast dev server + optimised build |
+| Styling | Tailwind CSS | Utility-first design |
+| Graph visualisation | react-force-graph-2d | Canvas-based force-directed layout |
+| State management | Zustand | Lightweight client state |
+| Streaming | Fetch + ReadableStream (SSE) | Real-time chat events |
+| Backend framework | FastAPI | Async REST API |
+| LLM (primary) | OpenAI GPT-4o-mini | Classify, generate SQL, verify |
+| LLM (fallback) | Google Gemini 2.0 Flash | Optional secondary provider |
+| Relational store | SQLite + aiosqlite | O2C transactional data |
+| Graph engine | NetworkX DiGraph | In-memory graph operations |
+| Validation | Pydantic v2 | Request/response models + SQL safety |
+| Config | pydantic-settings | Typed env-var management |
+| Frontend host | Vercel | CDN + SPA routing |
+| Backend host | Render | Dockerised web service + persistent disk |
+| Container | Docker | Reproducible backend environment |
+
+---
+
+## Data Model
+
+### Node Types (8)
+
+| Node | ID Format | Key Properties |
+|---|---|---|
+| `Customer` | `CUST_3xxxxxxxx` | name, category, grouping |
+| `SalesOrder` | `SO_7xxxxx` | amount (INR), delivery status, payment terms |
+| `DeliveryDoc` | `DEL_8xxxxxxx` | shipping point, goods movement status |
+| `BillingDoc` | `BILL_9xxxxxxx` | type (F2=invoice / S1=cancellation), amount |
+| `JournalEntry` | `JE_94xxxxxxxx` | posting date, amount, clearing date |
+| `Payment` | `PAY_9xxxxxxx` | clearing date, amount |
+| `Product` | `PROD_xxxxxxx` | description, type, weight |
+| `Plant` | `PLANT_xxxx` | name, sales organisation |
+
+### Edge Types (10)
+
+| Edge | Direction | Meaning |
+|---|---|---|
+| `PLACED` | Customer → SalesOrder | Customer initiated order |
+| `CONTAINS_ITEM` | SalesOrder → Product | Line item product |
+| `SHIPS_FROM` | SalesOrder → Plant | Originating plant |
+| `FULFILLED_BY` | SalesOrder → DeliveryDoc | Delivery fulfils order |
+| `BILLED_IN` | DeliveryDoc → BillingDoc | Delivery invoiced |
+| `BILLED_BY` | Customer → BillingDoc | Customer billed |
+| `POSTED_TO` | BillingDoc → JournalEntry | Invoice posted to GL |
+| `CANCELLED` | BillingDoc(S1) → BillingDoc(F2) | Cancellation reference |
+| `CLEARED_BY` | JournalEntry → Payment | Payment clears journal |
+| `SHIPPED_FROM` | DeliveryDoc → Plant | Shipping plant |
+
+### Critical Join Paths (O2C chain)
+
+```
+SalesOrder
+  outbound_delivery_items.referenceSdDocument = sales_order_headers.salesOrder
+    DeliveryDoc
+      billing_document_items.referenceSdDocument = outbound_delivery_headers.deliveryDocument
+        BillingDoc
+          billing_document_headers.accountingDocument = journal_entry_items.accountingDocument
+            JournalEntry
+              journal_entry_items.clearingAccountingDocument = payments.clearingAccountingDocument
+                Payment
+```
+
+---
+
+## LLM Pipeline
+
+### Stage 1 — Domain Classifier
+
+- Fast offline scorer: 34 O2C-domain signals vs 51 off-topic signals, confidence ratio determines guardrail activation.
+- LLM fallback (GPT-4o-mini): returns `is_relevant`, `query_type`, `extracted_ids`, `confidence`.
+- Query types: `lookup`, `trace`, `anomaly`, `aggregate`, `comparison`, `off_topic`.
+
+### Stage 2 — SQL Generator (self-correcting)
+
+- Full schema context (17 tables, all columns, join paths) injected into system prompt.
+- Explicit disambiguation notes (e.g., `billing_document_items.referenceSdDocument` references delivery, not sales order).
+- On execution failure or zero-row result: retry prompt includes the failed SQL and error, up to 2 retries.
+- Safety: Pydantic validator blocks any non-SELECT statement before execution.
+
+### Stage 3 — Result Verifier
+
+- GPT-4o-mini reads the raw rows and generates a grounded natural-language answer.
+- Entity IDs extracted from result rows, merged with IDs from the original query, returned as `highlighted_node_ids` for graph overlay.
+- Offline fallback formatter for zero-cost structured output when LLM is unavailable.
+
+---
+
+## Guardrails
+
+| Layer | Mechanism |
+|---|---|
+| Input validation | Pydantic: max 2000 chars, prompt-injection pattern detection |
+| Domain gating | Offline keyword scorer + LLM classifier; off-topic blocked before SQL generation |
+| SQL safety | Allowlist: SELECT only. Blocklist: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, EXEC, `--`, `;--` |
+| Output grounding | Answer derived solely from query result rows; no hallucinated data |
+
+---
+
+## API Reference
+
+### Graph endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/graph/initial` | Top nodes by degree centrality (`?limit=`) |
+| GET | `/api/graph/expand/{node_id}` | Paginated 1-hop neighbours (`?offset=&limit=&exclude=`) |
+| GET | `/api/graph/focal/{node_id}` | Focal node + immediate neighbours |
+| GET | `/api/graph/node/{node_id}` | Node metadata + neighbour count |
+| GET | `/api/graph/search` | Full-text search, returns best-match subgraph (`?q=`) |
+| GET | `/api/graph/anomalies` | Incomplete O2C flows (delivered-not-billed, billed-not-posted, cancellations) |
+| GET | `/api/graph/stats` | Node/edge counts by type |
+
+### Chat endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/chat/stream` | SSE streaming pipeline (classify → SQL → execute → answer) |
+| POST | `/api/chat/query` | Non-streaming equivalent |
+
+### Ingest endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/ingest/folder` | Ingest JSONL from a server-side folder path |
+| POST | `/api/ingest/upload` | Upload JSONL files directly |
+| POST | `/api/ingest/reset` | Re-ingest the default dataset |
+| GET | `/api/ingest/status` | Current ingestion state |
+| GET | `/api/ingest/preview` | Preview folder contents |
+| GET | `/api/ingest/browse` | Browse available data folders |
+
+### Utility
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | Service info |
+| GET | `/health` | Liveness: graph node/edge counts |
+| GET | `/docs` | Interactive Swagger UI |
+
+---
+
+## Why SQLite + NetworkX instead of Neo4j
 
 | Criterion | SQLite + NetworkX | Neo4j |
 |---|---|---|
-| **Setup** | Zero infrastructure, file-based | Requires server process |
-| **Data Ingestion** | JSONL → relational is natural for O2C data | Requires Cypher ETL |
-| **Query Power** | Full SQL for complex joins/aggregations | Cypher for traversals |
-| **Graph Ops** | NetworkX handles degree centrality, neighbor lookup | Native graph algorithms |
-| **Scale** | ~500 nodes is trivial for in-memory | Overkill for this dataset size |
-| **Deployment** | Single process, no external deps | Needs Docker/VM |
+| Infrastructure | Zero — file-based, single process | Requires a running server |
+| Data ingestion | JSONL → relational rows is natural for O2C | Needs Cypher ETL |
+| Analytical queries | Full SQL with complex joins and aggregations | Cypher excels at traversals, weaker on aggregations |
+| Graph operations | NetworkX: degree centrality, BFS, subgraph extraction | Native graph algorithms |
+| Scale fit | 669 nodes is trivial for in-memory | Overkill; adds ops burden |
+| Deployment | Docker single container, no sidecar | Needs separate container or managed service |
 
-**Chosen**: SQLite + NetworkX hybrid — relational power for SQL queries, in-memory graph for visualization and traversal operations.
+The hybrid approach gives relational power for LLM-driven SQL queries and graph semantics for visualisation and traversal — without adding operational overhead.
 
-## Graph Data Model
+---
 
-### Node Types (8)
-| Node | ID Pattern | Properties |
-|------|------------|------------|
-| `SalesOrder` | `SO_740506` | totalNetAmount, deliveryStatus, creationDate, paymentTerms |
-| `DeliveryDoc` | `DEL_80737721` | shippingPoint, goodsMovementStatus, pickingStatus |
-| `BillingDoc` | `BILL_90504248` | type (F2/S1), amount, isCancelled, accountingDocument |
-| `JournalEntry` | `JE_9400000220` | postingDate, amount, clearingDate |
-| `Payment` | `PAY_9400635977` | clearingDate, amount, customer |
-| `Customer` | `CUST_320000083` | fullName, category, grouping |
-| `Product` | `PROD_S8907367001003` | description, type, group, weight |
-| `Plant` | `PLANT_1920` | plantName, salesOrganization |
-
-### Edge Types (10)
-| Edge | From → To | Meaning |
-|------|-----------|---------|
-| `PLACED` | Customer → SalesOrder | Customer placed the order |
-| `CONTAINS_ITEM` | SalesOrder → Product | Order contains product |
-| `SHIPS_FROM` | SalesOrder/DeliveryDoc → Plant | Ships from plant |
-| `FULFILLED_BY` | SalesOrder → DeliveryDoc | Order fulfilled by delivery |
-| `BILLED_IN` | DeliveryDoc → BillingDoc | Delivery billed as invoice |
-| `BILLED_BY` | Customer → BillingDoc | Customer billed |
-| `POSTED_TO` | BillingDoc → JournalEntry | Invoice posted to accounting |
-| `CANCELLED` | BillingDoc(S1) → BillingDoc(F2) | Cancellation reference |
-| `CLEARED_BY` | JournalEntry → Payment | Payment clearing |
-| `SHIPPED_FROM` | DeliveryDoc → Plant | Shipped from plant |
-
-## LLM Prompting Strategy
-
-### 3-Stage Pipeline
-
-**Stage 1: Domain Classifier**
-- Fast offline classifier + optional Gemini LLM
-- Checks for domain keywords (sales order, delivery, billing, payment, customer, product, plant)
-- Blocks off-topic queries (weather, recipes, jokes, general knowledge)
-- Extracts entity IDs (SO numbers, billing docs, customer IDs)
-- Returns: `is_relevant`, `query_type`, `extracted_entities`, `confidence`
-
-**Stage 2: SQL Generator**
-- Injects full schema context (tables, columns, join paths)
-- Critical join paths provided as hints:
-  - Order → Delivery: `outbound_delivery_items.referenceSdDocument = sales_order_headers.salesOrder`
-  - Delivery → Billing: `billing_document_items.referenceSdDocument = outbound_delivery_headers.deliveryDocument`
-  - Billing → Journal: `billing_document_headers.accountingDocument = journal_entry_items.accountingDocument`
-- Special note: `billing_document_items.referenceSdDocument` references the **delivery document** (not sales order!)
-- SQL safety validation (SELECT only, no mutations)
-
-**Stage 3: Result Verifier**
-- Executes SQL against SQLite
-- Extracts entity IDs from results for graph highlighting
-- Formats answer in natural language (with Gemini) or structured format (offline)
-
-## Guardrails Implementation
-
-### 4 Layers of Protection
-
-1. **Input Validation** (Pydantic validators)
-   - Prompt injection detection: blocks `ignore previous instructions`, `act as`, `jailbreak`
-   - Max length: 2000 chars
-
-2. **Domain Classifier** (Stage 1)
-   - Offline: keyword matching with scoring
-   - Online: Gemini LLM classification
-   - Off-topic signals: weather, recipes, jokes, math, coding, politics, etc.
-
-3. **SQL Safety Validator** (Pydantic)
-   - Only SELECT queries allowed
-   - Blocks: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, EXEC
-   - Blocks comment syntax: `--`, `;--`
-
-4. **Output Verifier**
-   - Results grounded in actual database data
-   - Never generates data not in query results
-   - Returns "No data found" for empty results
-
-## Setup Instructions
+## Local Development
 
 ### Prerequisites
-- Python 3.9+
-- Node.js 18+
-- Google Gemini API key (free tier at https://ai.google.dev)
 
-### Backend Setup
+- Python 3.11+
+- Node.js 18+
+- OpenAI API key
+
+### Backend
+
 ```bash
 cd backend
-python3.9 -m venv venv
-source venv/bin/activate
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Copy the sap-o2c-data folder into backend/data/
-cp -r /path/to/sap-o2c-data data/
-
-# Create .env
+# Configure environment
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY (and OPENAI_API_KEY if desired)
+# Edit .env — set OPENAI_API_KEY
 
-# Ingest data and build graph
-python -m app.services.graph_builder
+# Place JSONL data files under backend/data/sap-o2c-data/
+# (or use the API to ingest after startup)
 
-# Start server
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Frontend Setup
+The server ingests JSONL data, builds the SQLite schema, constructs the NetworkX graph, and generates the LLM schema context — all at startup.
+
+### Frontend
+
 ```bash
 cd frontend
 npm install
 cp .env.example .env
-# Optional: set VITE_API_BASE_URL if backend is not proxied locally
+# VITE_API_BASE_URL defaults to /api (proxied to localhost:8000 in dev)
 npm run dev
 ```
 
+### Docker Compose (full stack)
+
+```bash
+docker-compose up --build
+# Frontend: http://localhost:3000
+# Backend:  http://localhost:8000
+# API docs: http://localhost:8000/docs
+```
+
+---
+
 ## Deployment
 
-This repo is set up for:
-- Frontend on Vercel
-- Backend on Render
+### Vercel — Frontend
 
-### Vercel (Frontend)
-1. Import the repo in Vercel.
-2. Set the project root to the repository root.
-3. Vercel will use [`vercel.json`](vercel.json) and build the frontend from `frontend/`.
-4. Add this environment variable in Vercel:
-   ```bash
-   VITE_API_BASE_URL=https://your-render-backend.onrender.com/api
+1. Import this repository in Vercel.
+2. Vercel detects `vercel.json` and builds `frontend/` automatically.
+3. Add one environment variable in the Vercel project settings:
+
+   ```
+   VITE_API_BASE_URL=https://<your-render-service>.onrender.com/api
    ```
 
-### Render (Backend)
-1. Create a new Web Service from this repo on Render.
-2. Use the following build and start commands:
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. Attach a persistent disk (minimum 1GB) mounted at `/var/data` so that the SQLite database survives restarts.
-4. Add secrets (environment variables):
-   ```bash
-   GEMINI_API_KEY=your_gemini_key
-   OPENAI_API_KEY=your_openai_key  # Optional, used as fallback
-   FRONTEND_URL=https://your-vercel-app.vercel.app  # For CORS
-   ```
-5. Ensure the persistent disk is mounted at `/var/data` and the application will use:
-   - Database: `/var/data/o2c.db` (relative path `data/o2c.db` resolves here)
-   - Data directory: `/var/data/sap-o2c-data` (if you need to ingest data post-deploy)
+4. Deploy. SPA client-side routing is handled by the `rewrites` rule in `vercel.json`.
 
-Note: The data ingestion step (`python -m app.services.graph_builder`) should be run either:
-   a) Before deploying (by copying the data directory into the persistent disk), or
-   b) After deploying via Render's shell access (if you prefer to ingest on first run).
+### Render — Backend
+
+1. Create a **Web Service** from this repository.
+2. Render detects `render.yaml` — it will build and run the Docker container from `backend/Dockerfile`.
+3. Attach a **Persistent Disk** (1 GB minimum) mounted at `/var/data`.
+4. Set environment variables in the Render dashboard:
+
+   | Variable | Value |
+   |---|---|
+   | `OPENAI_API_KEY` | Your OpenAI key |
+   | `CORS_ORIGINS` | `https://<your-vercel-app>.vercel.app` |
+   | `DATABASE_PATH` | `/var/data/o2c.db` (already set in render.yaml) |
+   | `DATA_DIR` | `/var/data/sap-o2c-data` (already set in render.yaml) |
+
+5. On first boot, the service will attempt to ingest JSONL data from `DATA_DIR`. Either:
+   - Copy your JSONL files to the persistent disk before the first deploy via Render's shell, or
+   - Use the `/api/ingest/upload` endpoint after deploy to push data through the browser.
+
+---
 
 ## Example Queries
 
-### a. Products with most billing documents
+**Aggregate**
 ```
 Which products are associated with the highest number of billing documents?
 ```
-→ Joins products through sales_order_items → outbound_delivery_items → billing_document_items, GROUP BY product
+Joins `products` → `sales_order_items` → `outbound_delivery_items` → `billing_document_items`, groups by product.
 
-### b. Full O2C trace
+**Full O2C trace**
 ```
-Trace the full flow of billing document 90504248
+Trace the complete flow for billing document 90504248
 ```
-→ LEFT JOINs from billing_document_headers through journal_entry_items to payments, showing the complete chain
+LEFT JOINs from `billing_document_headers` through `journal_entry_items` to `payments`, showing every step and any gaps.
 
-### c. Incomplete flows
+**Anomaly detection**
 ```
-Identify sales orders that have broken or incomplete flows (delivered but not billed)
+Show sales orders that were delivered but never billed
 ```
-→ Uses LEFT JOIN + IS NULL to find delivery records without matching billing documents
+LEFT JOIN `outbound_delivery_headers` → `billing_document_items` WHERE billing columns IS NULL.
+
+**Customer lookup**
+```
+What are all the orders placed by customer 320000083?
+```
+Joins `business_partners` → `sales_order_headers` with full order status.
+
+---
+
+## Dataset Statistics
+
+| Metric | Value |
+|---|---|
+| Total records ingested | 1,634 |
+| Graph nodes | 669 |
+| Graph edges | 1,188 |
+| Customers | 8 |
+| Products | 69 |
+| Plants | 44 |
+| Sales Orders | 100 |
+| Delivery Documents | 86 |
+| Billing Documents | 163 |
+| Journal Entries | 123 |
+| Payments | 76 |
+| Data date range | March 31 – July 24, 2025 |
+| Anomalies detected | 110 |
+
+---
 
 ## Project Structure
+
 ```
 dodge-ai-graph/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app + lifespan
-│   │   ├── config.py            # Settings (pydantic-settings)
-│   │   ├── models/              # Pydantic models
-│   │   ├── routers/             # API endpoints (graph, chat)
-│   │   ├── services/            # Business logic
-│   │   │   ├── graph_builder.py # JSONL → SQLite + NetworkX
-│   │   │   ├── graph_service.py # Graph query operations
-│   │   │   ├── llm_agent.py     # NL → SQL pipeline
-│   │   │   ├── guardrails.py    # Domain classifier
-│   │   │   └── sql_executor.py  # Safe SQL execution
-│   │   └── db/                  # Schema context JSON
-│   ├── data/                    # SQLite DB + JSONL data (on persistent disk in Render)
+│   │   ├── main.py                  FastAPI app + lifespan startup
+│   │   ├── config.py                Typed settings via pydantic-settings
+│   │   ├── models/
+│   │   │   ├── chat_models.py       Chat request/response Pydantic models
+│   │   │   └── graph_models.py      Graph API response models
+│   │   ├── routers/
+│   │   │   ├── chat.py              /api/chat  (stream + query)
+│   │   │   ├── graph.py             /api/graph (nodes, edges, search, anomalies)
+│   │   │   └── ingest.py            /api/ingest (upload, folder, reset)
+│   │   ├── services/
+│   │   │   ├── llm_agent.py         3-stage NL→SQL pipeline + SSE streaming
+│   │   │   ├── guardrails.py        Offline domain classifier
+│   │   │   ├── graph_builder.py     JSONL→SQLite ingestion + NetworkX construction
+│   │   │   ├── graph_service.py     Graph query helpers (expand, focal, search)
+│   │   │   └── sql_executor.py      Safe SELECT execution + entity ID extraction
+│   │   └── db/
+│   │       └── schema_context.json  Generated schema fed to the LLM prompt
+│   ├── data/                        SQLite DB + JSONL source files (persistent disk on Render)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── components/          # React components
-│   │   ├── hooks/               # Zustand stores
-│   │   ├── types/               # TypeScript interfaces
-│   │   ├── utils/               # Color mappings
-│   │   └── api/                 # API client
+│   │   ├── api/client.ts            Typed fetch wrappers + SSE parser
+│   │   ├── components/
+│   │   │   ├── ChatPanel.tsx        Streaming chat UI
+│   │   │   ├── Neo4jGraph.tsx       Force-graph canvas + interaction
+│   │   │   ├── NodeInspector.tsx    Node metadata side panel
+│   │   │   ├── DataIngestionPanel.tsx  Upload + ingest controls
+│   │   │   ├── SourcesCitation.tsx  SQL table provenance display
+│   │   │   └── ThoughtProcess.tsx   LLM reasoning steps display
+│   │   ├── hooks/
+│   │   │   ├── useChat.ts           Zustand chat store
+│   │   │   └── useGraph.ts          Zustand graph store
+│   │   ├── types/graph.ts           TypeScript interfaces
+│   │   └── utils/graphColors.ts     Node type → colour mapping
 │   ├── package.json
+│   ├── vite.config.ts
 │   └── Dockerfile
 ├── docker-compose.yml
+├── render.yaml                      Render deployment spec
+├── vercel.json                      Vercel build + SPA routing config
 └── README.md
 ```
-
-## Data Stats
-- **Total Records Ingested**: 1,634
-- **Graph Nodes**: 669
-- **Graph Edges**: 1,188
-- **Node Types**: Customer (8), Product (69), Plant (44), SalesOrder (100), DeliveryDoc (86), BillingDoc (163), JournalEntry (123), Payment (76)
-- **Date Range**: March 31, 2025 - July 24, 2025
-- **Anomalies Found**: 110 (delivered-not-billed, billed-not-posted, billing cancellations)

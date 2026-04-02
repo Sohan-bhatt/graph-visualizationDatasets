@@ -51,6 +51,7 @@ frontend/.vite/
 backend/data/o2c.db
 backend/data/uploads/
 backend/data/sap-o2c-data/
+backend/data/Sample/o2c.db
 backend/data/Sample/uploads/
 backend/data/Sample/sap-o2c-data/
 

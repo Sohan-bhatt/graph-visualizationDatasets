@@ -8,9 +8,9 @@ services:
     autoDeploy: true
     healthCheckPath: /health
     envVars:
-      - key: GEMINI_API_KEY
-        sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       - key: DATABASE_PATH
         value: /var/data/o2c.db
